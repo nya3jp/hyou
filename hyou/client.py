@@ -14,11 +14,12 @@
 
 from __future__ import (
     absolute_import, division, print_function, unicode_literals)
-from builtins import (  # noqa: F401
+from builtins import (  # type: ignore  # noqa: F401
     ascii, bytes, chr, dict, filter, hex, input, int, list, map, next,
     object, oct, open, pow, range, round, str, super, zip)
 
 import datetime
+from typing import Any, AnyStr, Dict, Generator, Optional, Sequence, Tuple
 
 import future.utils
 import googleapiclient.discovery
@@ -34,37 +35,43 @@ SHEETS_API_DISCOVERY_URL = (
 GOOGLE_SPREADSHEET_SCOPES = util.SCOPES
 
 
-def to_native_str(s):
+def to_native_str(s: str) -> str:
     return future.utils.text_to_native_str(s, encoding='utf-8')
 
 
 class API(object):
 
-    def __init__(self, http):
+    def __init__(self, http: httplib2.Http) -> None:
         self.sheets = googleapiclient.discovery.build(
             'sheets', 'v4', http=http,
             discoveryServiceUrl=SHEETS_API_DISCOVERY_URL)
-        self.drive = googleapiclient.discovery.build('drive', 'v2', http=http)
+        self.drive = googleapiclient.discovery.build(
+            'drive', 'v2', http=http)
 
 
-class Collection(util.LazyOrderedDictionary):
+class Collection(util.LazyOrderedDictionary[str, 'Spreadsheet']):
 
-    def __init__(self, api):
+    def __init__(self, api: API) -> None:
         super(Collection, self).__init__(
             self._spreadsheet_enumerator,
             self._spreadsheet_constructor)
         self._api = api
 
     @classmethod
-    def login(cls, json_path=None, json_text=None):
-        if json_text is None:
+    def login(cls,
+              json_path: Optional[AnyStr]=None,
+              json_text: Optional[str]=None) -> 'Collection':
+        if json_path is not None:
+            assert json_text is None
             with open(json_path, 'r') as f:
                 json_text = f.read()
+        assert json_text is not None
         credentials = util.parse_credentials(json_text)
         http = credentials.authorize(httplib2.Http())
         return cls(API(http))
 
-    def create_spreadsheet(self, title, rows=1000, cols=26):
+    def create_spreadsheet(
+            self, title: str, rows: int=1000, cols: int=26) -> 'Spreadsheet':
         body = {
             'title': title,
             'mimeType': 'application/vnd.google-apps.spreadsheet',
@@ -76,7 +83,8 @@ class Collection(util.LazyOrderedDictionary):
         spreadsheet[0].set_size(rows, cols)
         return spreadsheet
 
-    def _spreadsheet_enumerator(self):
+    def _spreadsheet_enumerator(
+            self) -> Generator[Tuple[str, 'Spreadsheet'], None, None]:
         response = self._api.drive.files().list(
             maxResults=1000,
             q=('mimeType="application/vnd.google-apps.spreadsheet" and '
@@ -86,26 +94,26 @@ class Collection(util.LazyOrderedDictionary):
             key = item['id']
             yield (key, Spreadsheet(self._api, key, None))
 
-    def _spreadsheet_constructor(self, key):
+    def _spreadsheet_constructor(self, key: str) -> 'Spreadsheet':
         entry = self._api.sheets.spreadsheets().get(
             spreadsheetId=key, includeGridData=False).execute()
         return Spreadsheet(self._api, entry['spreadsheetId'], entry)
 
 
-class Spreadsheet(util.LazyOrderedDictionary):
+class Spreadsheet(util.LazyOrderedDictionary[str, 'Worksheet']):
 
-    def __init__(self, api, key, entry):
+    def __init__(self, api: API, key: str, entry: Optional[Dict]) -> None:
         super(Spreadsheet, self).__init__(self._worksheet_enumerator, None)
         self._api = api
         self._key = key
         self._entry = entry
-        self._updated = None
+        self._updated = None  # type: Optional[datetime.datetime]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return to_native_str(
             '<%s key="%s">' % (self.__class__.__name__, self.key))
 
-    def refresh(self, entry=None):
+    def refresh(self, entry: Dict=None) -> None:
         if entry is not None:
             self._entry = entry
         else:
@@ -114,7 +122,8 @@ class Spreadsheet(util.LazyOrderedDictionary):
         self._updated = None
         super(Spreadsheet, self).refresh()
 
-    def add_worksheet(self, title, rows=1000, cols=26):
+    def add_worksheet(
+            self, title: str, rows: int=1000, cols: int=26) -> 'Worksheet':
         new_entry = self._make_single_batch_request(
             'addSheet',
             {
@@ -129,7 +138,7 @@ class Spreadsheet(util.LazyOrderedDictionary):
         self.refresh(new_entry)
         return self[title]
 
-    def delete_worksheet(self, title):
+    def delete_worksheet(self, title: str) -> None:
         worksheet = self[title]
         new_entry = self._make_single_batch_request(
             'deleteSheet',
@@ -137,20 +146,21 @@ class Spreadsheet(util.LazyOrderedDictionary):
         self.refresh(new_entry)
 
     @property
-    def key(self):
+    def key(self) -> str:
         return self._key
 
     @property
-    def url(self):
+    def url(self) -> str:
         return 'https://docs.google.com/spreadsheets/d/%s/edit' % self.key
 
     @property
-    def title(self):
+    def title(self) -> str:
         self._ensure_entry()
+        assert self._entry is not None
         return self._entry['properties']['title']
 
     @title.setter
-    def title(self, new_title):
+    def title(self, new_title: str) -> None:
         new_entry = self._make_single_batch_request(
             'updateSpreadsheetProperties',
             {
@@ -162,24 +172,26 @@ class Spreadsheet(util.LazyOrderedDictionary):
         self.refresh(new_entry)
 
     @property
-    def updated(self):
+    def updated(self) -> datetime.datetime:
         if not self._updated:
             response = self._api.drive.files().get(fileId=self.key).execute()
             self._updated = datetime.datetime.strptime(
                 response['modifiedDate'], '%Y-%m-%dT%H:%M:%S.%fZ')
         return self._updated
 
-    def _ensure_entry(self):
+    def _ensure_entry(self) -> None:
         if self._entry is None:
             self.refresh()
 
-    def _worksheet_enumerator(self):
+    def _worksheet_enumerator(
+            self) -> Generator[Tuple[str, 'Worksheet'], None, None]:
         self._ensure_entry()
+        assert self._entry is not None
         for sheet_entry in self._entry['sheets']:
             worksheet = Worksheet(self, self._api, sheet_entry)
             yield (worksheet.title, worksheet)
 
-    def _make_single_batch_request(self, method, params):
+    def _make_single_batch_request(self, method: str, params: Dict) -> Dict:
         request = {
             'requests': [{method: params}],
             'include_spreadsheet_in_response': True,
@@ -189,22 +201,26 @@ class Spreadsheet(util.LazyOrderedDictionary):
         return response['updatedSpreadsheet']
 
 
-class WorksheetView(object):
+class WorksheetView(Sequence['WorksheetViewRow']):
 
-    def __init__(self, worksheet, api, start_row, end_row, start_col, end_col):
+    def __init__(self, worksheet: 'Worksheet', api: API,
+                 start_row: int, end_row: int,
+                 start_col: int, end_col: int) -> None:
         self._worksheet = worksheet
         self._api = api
         self._reset_size(start_row, end_row, start_col, end_col)
-        self._input_value_map = {}
+        self._input_value_map = {}  # type: Dict[Tuple[int, int], str]
         self._cells_fetched = False
-        self._queued_updates = []
+        self._queued_updates = []  # type: List[Tuple[int, int, str]]
 
-    def refresh(self):
+    def refresh(self) -> None:
         self._input_value_map.clear()
         self._cells_fetched = False
         del self._queued_updates[:]
 
-    def _reset_size(self, start_row, end_row, start_col, end_col):
+    def _reset_size(
+            self, start_row: int, end_row: int,
+            start_col: int, end_col: int) -> None:
         self.start_row = start_row
         self.end_row = end_row
         self.start_col = start_col
@@ -213,7 +229,7 @@ class WorksheetView(object):
             WorksheetViewRow(self, row, start_col, end_col)
             for row in range(start_row, end_row)]
 
-    def _ensure_cells_fetched(self):
+    def _ensure_cells_fetched(self) -> None:
         if self._cells_fetched:
             return
         range_str = util.format_range_a1_notation(
@@ -233,7 +249,7 @@ class WorksheetView(object):
                 self._input_value_map.setdefault((index_row, index_col), value)
         self._cells_fetched = True
 
-    def commit(self):
+    def commit(self) -> None:
         if not self._queued_updates:
             return
         request = {
@@ -254,51 +270,52 @@ class WorksheetView(object):
             body=request).execute()
         del self._queued_updates[:]
 
-    def __nonzero__(self):
+    def __nonzero__(self) -> bool:
         return len(self) > 0
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: Any) -> Any:
         return self._view_rows[index]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.rows
 
-    def __iter__(self):
+    def __iter__(self) -> Generator['WorksheetViewRow', None, None]:
         for row in self._view_rows:
             yield row
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return repr(self._view_rows)
 
-    def __enter__(self):
+    def __enter__(self) -> 'WorksheetView':
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
         self.commit()
 
     @property
-    def rows(self):
+    def rows(self) -> int:
         return self.end_row - self.start_row
 
     @property
-    def cols(self):
+    def cols(self) -> int:
         return self.end_col - self.start_col
 
 
-class WorksheetViewRow(util.CustomMutableFixedList):
+class WorksheetViewRow(util.CustomMutableFixedList[str]):
 
-    def __init__(self, view, row, start_col, end_col):
+    def __init__(self, view: WorksheetView, row: int,
+                 start_col: int, end_col: int) -> None:
         self._view = view
         self._row = row
         self._start_col = start_col
         self._end_col = end_col
 
-    def __nonzero__(self):
+    def __nonzero__(self) -> bool:
         return len(self) > 0
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: Any) -> Any:
         if isinstance(index, slice):
-            start, stop, step = index.indices(len(self))
+            start, stop, step = index.indices(len(self))  # type: ignore
             assert step == 1, 'slicing with step is not supported'
             if stop < start:
                 stop = start
@@ -316,9 +333,9 @@ class WorksheetViewRow(util.CustomMutableFixedList):
             self._view._ensure_cells_fetched()
         return self._view._input_value_map.get((self._row, col), '')
 
-    def __setitem__(self, index, new_value):
+    def __setitem__(self, index: Any, new_value: Any) -> None:
         if isinstance(index, slice):
-            start, stop, step = index.indices(len(self))
+            start, stop, step = index.indices(len(self))  # type: ignore
             assert step == 1, 'slicing with step is not supported'
             if stop < start:
                 stop = start
@@ -351,43 +368,48 @@ class WorksheetViewRow(util.CustomMutableFixedList):
         self._view._input_value_map[(self._row, col)] = new_value
         self._view._queued_updates.append((self._row, col, new_value))
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self._end_col - self._start_col
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[str, None, None]:
         self._view._ensure_cells_fetched()
         for col in range(self._start_col, self._end_col):
             yield self._view._input_value_map.get((self._row, col), '')
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return repr([self[i] for i in range(len(self))])
 
 
 class Worksheet(WorksheetView):
 
-    def __init__(self, spreadsheet, api, entry):
+    def __init__(
+            self, spreadsheet: Spreadsheet, api: API, entry: Dict) -> None:
         self._spreadsheet = spreadsheet
         self._api = api
         self._entry = entry
         super(Worksheet, self).__init__(self, api, 0, self.rows, 0, self.cols)
 
-    def refresh(self, entry=None):
+    def refresh(self, entry: Optional[Dict]=None) -> None:
         if entry is not None:
             self._entry = entry
         else:
             spreadsheet_entry = self._api.sheets.spreadsheets().get(
                 spreadsheetId=self._spreadsheet.key,
                 includeGridData=False).execute()
-            for entry in spreadsheet_entry['sheets']:
-                if entry['properties']['sheetId'] == self.key:
-                    self._entry = entry
+            for new_entry in spreadsheet_entry['sheets']:
+                if new_entry['properties']['sheetId'] == self.key:
+                    self._entry = new_entry
                     break
             else:
                 raise KeyError('Sheet has been removed')
         self._reset_size(0, self.rows, 0, self.cols)
         super(Worksheet, self).refresh()
 
-    def view(self, start_row=None, end_row=None, start_col=None, end_col=None):
+    def view(self,
+             start_row: Optional[int]=None,
+             end_row: Optional[int]=None,
+             start_col: Optional[int]=None,
+             end_col: Optional[int]=None) -> WorksheetView:
         if start_row is None:
             start_row = 0
         if end_row is None:
@@ -405,7 +427,7 @@ class Worksheet(WorksheetView):
             start_row=start_row, end_row=end_row,
             start_col=start_col, end_col=end_col)
 
-    def set_size(self, rows, cols):
+    def set_size(self, rows: int, cols: int) -> None:
         assert isinstance(rows, int) and rows > 0
         assert isinstance(cols, int) and cols > 0
         new_entry = self._make_single_batch_request(
@@ -423,15 +445,15 @@ class Worksheet(WorksheetView):
         self.refresh(new_entry)
 
     @property
-    def key(self):
+    def key(self) -> str:
         return self._entry['properties']['sheetId']
 
     @property
-    def title(self):
+    def title(self) -> str:
         return self._entry['properties']['title']
 
     @title.setter
-    def title(self, new_title):
+    def title(self, new_title: str) -> None:
         new_entry = self._make_single_batch_request(
             'updateSheetProperties',
             {
@@ -444,22 +466,22 @@ class Worksheet(WorksheetView):
         self.refresh(new_entry)
 
     @property
-    def rows(self):
+    def rows(self) -> int:
         return self._entry['properties']['gridProperties']['rowCount']
 
     @rows.setter
-    def rows(self, rows):
+    def rows(self, rows: int) -> None:
         self.set_size(rows, self.cols)
 
     @property
-    def cols(self):
+    def cols(self) -> int:
         return self._entry['properties']['gridProperties']['columnCount']
 
     @cols.setter
-    def cols(self, cols):
+    def cols(self, cols: int) -> None:
         self.set_size(self.rows, cols)
 
-    def _make_single_batch_request(self, method, params):
+    def _make_single_batch_request(self, method: str, params: Dict) -> Dict:
         spreadsheet_entry = self._spreadsheet._make_single_batch_request(
             method, params)
         for entry in spreadsheet_entry['sheets']:

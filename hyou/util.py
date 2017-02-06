@@ -14,15 +14,22 @@
 
 from __future__ import (
     absolute_import, division, print_function, unicode_literals)
-from builtins import (  # noqa: F401
+from builtins import (  # type: ignore  # noqa: F401
     ascii, bytes, chr, dict, filter, hex, input, int, list, map, next,
     object, oct, open, pow, range, round, str, super, zip)
 
 import json
+from typing import (
+    Any, Callable, Generic, Iterable, Iterator, List, Optional, Sequence,
+    Tuple, TypeVar, Union)
 
 import oauth2client.client
 import oauth2client.service_account
 
+
+K = TypeVar('K')
+V = TypeVar('V')
+T = TypeVar('T')
 
 SCOPES = (
     'https://spreadsheets.google.com/feeds',
@@ -30,7 +37,7 @@ SCOPES = (
 )
 
 
-def format_column_address(index_column):
+def format_column_address(index_column: int) -> str:
     k = index_column
     p = 1
     while k >= 26 ** p:
@@ -43,7 +50,8 @@ def format_column_address(index_column):
 
 
 def format_range_a1_notation(
-        worksheet_title, start_row, end_row, start_col, end_col):
+        worksheet_title: str, start_row: int, end_row: int,
+        start_col: int, end_col: int) -> str:
     return '\'%s\'!%s%d:%s%d' % (
         worksheet_title.replace('\'', '\'\''),
         format_column_address(start_col),
@@ -52,7 +60,7 @@ def format_range_a1_notation(
         end_row)
 
 
-def parse_credentials(json_text):
+def parse_credentials(json_text: str) -> oauth2client.client.Credentials:
     json_data = json.loads(json_text)
     if '_module' in json_data:
         return oauth2client.client.Credentials.new_from_json(
@@ -66,51 +74,53 @@ def parse_credentials(json_text):
     raise ValueError('unrecognized credential format')
 
 
-class LazyOrderedDictionary(object):
+class LazyOrderedDictionary(Generic[K, V]):
 
-    def __init__(self, enumerator, constructor):
+    def __init__(self,
+                 enumerator: Callable[[], Iterable[Tuple[K, V]]],
+                 constructor: Optional[Callable[[K], Optional[V]]]) -> None:
         self._enumerator = enumerator
         self._constructor = constructor
-        self._cache_list = []   # [(key, value)]
-        self._cache_index = {}  # key -> index of _cache_list
+        self._cache_list = []  # type: List[Tuple[K, V]]
+        self._cache_index = {}  # type: Dict[K, int]
         self._enumerated = False
 
-    def refresh(self):
+    def refresh(self) -> None:
         del self._cache_list[:]
         self._cache_index.clear()
         self._enumerated = False
 
-    def __len__(self):
+    def __len__(self) -> int:
         self._ensure_enumerated()
         return len(self._cache_list)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterable[K]:
         return self.iterkeys()
 
-    def iterkeys(self):
+    def iterkeys(self) -> Iterable[K]:
         self._ensure_enumerated()
         for key, _ in self._cache_list:
             yield key
 
-    def itervalues(self):
+    def itervalues(self) -> Iterable[V]:
         for _, value in self.iteritems():
             yield value
 
-    def iteritems(self):
+    def iteritems(self) -> Iterable[Tuple[K, V]]:
         self._ensure_enumerated()
         for key, value in self._cache_list:
             yield (key, value)
 
-    def keys(self):
+    def keys(self) -> List[K]:
         return list(self.iterkeys())
 
-    def values(self):
+    def values(self) -> List[V]:
         return list(self.itervalues())
 
-    def items(self):
+    def items(self) -> List[Tuple[K, V]]:
         return list(self.iteritems())
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: Union[K, int]) -> V:
         if isinstance(key, int):
             self._ensure_enumerated()
             return self._cache_list[key][1]
@@ -131,13 +141,13 @@ class LazyOrderedDictionary(object):
             raise KeyError(key)
         return self._cache_list[index][1]
 
-    def get(self, key, default=None):
+    def get(self, key: Union[K, int], default: Any) -> Any:
         try:
             return self[key]
         except KeyError:
             return default
 
-    def _ensure_enumerated(self):
+    def _ensure_enumerated(self) -> None:
         if self._enumerated:
             return
         # Save partially constructed entries.
@@ -158,7 +168,7 @@ class LazyOrderedDictionary(object):
         self._enumerated = True
 
 
-class CustomMutableFixedList(object):
+class CustomMutableFixedList(Generic[T], Sequence[T]):
     """Provides methods to mimic a mutable fixed-size Python list.
 
     Subclasses need to provide implementation of at least following methods:
@@ -168,7 +178,19 @@ class CustomMutableFixedList(object):
     - __len__
     """
 
-    def __eq__(self, other):
+    def __getitem__(self, index: Any) -> Any:
+        raise NotImplementedError()
+
+    def __setitem__(self, index: Any, value: Any) -> None:
+        raise NotImplementedError()
+
+    def __iter__(self) -> Iterator[T]:
+        raise NotImplementedError()
+
+    def __len__(self) -> int:
+        raise NotImplementedError()
+
+    def __eq__(self, other: Sequence[T]) -> bool:  # type: ignore
         if len(self) != len(other):
             return False
         for a, b in zip(self, other):
@@ -176,75 +198,77 @@ class CustomMutableFixedList(object):
                 return False
         return True
 
-    def __ne__(self, other):
+    def __ne__(self, other: Sequence[T]) -> bool:  # type: ignore
         return not (self == other)
 
-    def __lt__(self, other):
+    def __lt__(self, other: Sequence[T]) -> bool:
         for a, b in zip(self, other):
             if a != b:
-                return a < b
+                return a < b  # type: ignore
         return len(self) < len(other)
 
-    def __le__(self, other):
+    def __le__(self, other: Sequence[T]) -> bool:
         for a, b in zip(self, other):
             if a != b:
-                return a < b
+                return a < b  # type: ignore
         return len(self) <= len(other)
 
-    def __gt__(self, other):
+    def __gt__(self, other: Sequence[T]) -> bool:
         return not (self <= other)
 
-    def __ge__(self, other):
+    def __ge__(self, other: Sequence[T]) -> bool:
         return not (self < other)
 
-    def __contains__(self, find_value):
+    def __contains__(self, find_value: T) -> bool:  # type: ignore
         for value in self:
             if value == find_value:
                 return True
         return False
 
-    def count(self, find_value):
+    def count(self, find_value: T) -> int:
         result = 0
         for value in self:
             if value == find_value:
                 result += 1
         return result
 
-    def index(self, find_value):
+    def index(self, find_value: T) -> int:  # type: ignore
         for i, value in enumerate(self):
             if value == find_value:
                 return i
         raise ValueError('%r is not in list' % find_value)
 
-    def reverse(self):
+    def reverse(self) -> None:
         for i, new_value in enumerate(list(reversed(self))):
             self[i] = new_value
 
-    def sort(self, key=None, reverse=False):
+    def sort(self,
+             key: Optional[Callable[[T], Any]]=None,
+             reverse: bool=False) -> None:
         for i, new_value in enumerate(sorted(
                 self, key=key, reverse=reverse)):
             self[i] = new_value
 
-    def __delitem__(self, key):
+    def __delitem__(self, key: Any) -> None:
         raise NotImplementedError(
             'Methods changing the list size are unavailable')
 
-    def append(self, x):
+    def append(self, x: T) -> None:
         raise NotImplementedError(
             'Methods changing the list size are unavailable')
 
-    def extend(self, x):
+    def extend(self, x: Iterable[T]) -> None:
         raise NotImplementedError(
             'Methods changing the list size are unavailable')
 
-    def insert(self, i, x):
+    def insert(self, i: int, x: T) -> None:
         raise NotImplementedError(
             'Methods changing the list size are unavailable')
 
-    def pop(self, i=None):
+    def pop(self, i: int=None) -> T:
         raise NotImplementedError(
             'Methods changing the list size are unavailable')
 
-    def remove(self, x):
+    def remove(self, x: T) -> None:
         raise NotImplementedError(
             'Methods changing the list size are unavailable')
