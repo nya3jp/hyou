@@ -63,3 +63,9 @@ def native_str_to_bytes(s):
     if six.PY2:
         return s
     return s.encode('utf-8')
+
+
+def promote_str(s):
+    if six.PY2 and isinstance(s, builtins.str):
+        return builtins.unicode(s)
+    return s

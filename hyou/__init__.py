@@ -15,6 +15,10 @@
 from __future__ import (
     absolute_import, division, print_function, unicode_literals)
 
+from .cell import Cell
+from .cell_format import CellFormat
+from .cell_format import Color
+from .cell_format import NumberFormatType
 from .collection import Collection
 from .spreadsheet import Spreadsheet
 from .util import SCOPES
@@ -26,7 +30,11 @@ login = Collection.login
 __version__ = '3.0b2'
 
 __all__ = [
+    'Cell',
+    'CellFormat',
     'Collection',
+    'Color',
+    'NumberFormatType',
     'SCOPES',
     'Spreadsheet',
     'Worksheet',

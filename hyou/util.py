@@ -15,6 +15,7 @@
 from __future__ import (
     absolute_import, division, print_function, unicode_literals)
 
+import datetime
 import json
 
 import oauth2client.client
@@ -28,6 +29,13 @@ SCOPES = (
     'https://spreadsheets.google.com/feeds',
     'https://www.googleapis.com/auth/drive',
 )
+
+SERIAL_EPOCH = datetime.datetime(year=1899, month=12, day=30)
+
+
+def check_type(value, type):
+    if not isinstance(value, type):
+        raise TypeError('Must be %r' % type)
 
 
 def format_column_address(index_column):
@@ -50,6 +58,14 @@ def format_range_a1_notation(
         start_row + 1,
         format_column_address(end_col - 1),
         end_row)
+
+
+def serial_to_datetime(serial):
+    return SERIAL_EPOCH + datetime.timedelta(days=serial)
+
+
+def datetime_to_serial(dt):
+    return (dt - SERIAL_EPOCH).total_seconds() / 86400
 
 
 def parse_credentials(json_text):

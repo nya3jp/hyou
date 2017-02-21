@@ -17,6 +17,7 @@ from __future__ import (
 
 import six
 
+from . import cell
 from . import exception
 from . import py3
 from . import util
@@ -27,15 +28,14 @@ class WorksheetView(util.CustomMutableFixedList):
     def __init__(self, worksheet, api, start_row, end_row, start_col, end_col):
         self._worksheet = worksheet
         self._api = api
+        self._cell_map = {}
+        self._default_format = None
+        self._fetched = False
         self._reset_size(start_row, end_row, start_col, end_col)
-        self._input_value_map = {}
-        self._cells_fetched = False
-        self._queued_updates = []
 
     def refresh(self):
-        self._input_value_map.clear()
-        self._cells_fetched = False
-        del self._queued_updates[:]
+        self._default_format = None
+        self._fetched = False
 
     def _reset_size(self, start_row, end_row, start_col, end_col):
         self._start_row = start_row
@@ -46,46 +46,70 @@ class WorksheetView(util.CustomMutableFixedList):
             WorksheetViewRow(self, row, start_col, end_col)
             for row in py3.range(start_row, end_row)]
 
-    def _ensure_cells_fetched(self):
-        if self._cells_fetched:
+    def _get_cell(self, row, col):
+        if not (self._start_row <= row < self._end_row):
+            raise IndexError('Row %d is out of this view' % row)
+        if not (self._start_col <= col < self._end_col):
+            raise IndexError('Column %d is out of this view' % col)
+        self._ensure_fetched()
+        location = (row, col)
+        if location not in self._cell_map:
+            self._cell_map[location] = cell.Cell(
+                self, row, col, {}, self._default_format)
+        return self._cell_map[location]
+
+    def _ensure_fetched(self):
+        if self._fetched:
             return
+        response = self._fetch()
+        # Since this function is recursively called inside the constructor
+        # of Cell, we need to set self._fetched first to avoid infinite
+        # recursion.
+        self._fetched = True
+        self._default_format = response['properties']['defaultFormat']
+        cleared_locations = set(self._cell_map.keys())
+        range_data = response['sheets'][0]['data'][0]
+        for i, row_data in enumerate(range_data['rowData']):
+            row = self._start_row + i
+            for j, cell_data in enumerate(row_data.get('values', [])):
+                col = self._start_col + j
+                location = (row, col)
+                cleared_locations.discard(location)
+                if location not in self._cell_map:
+                    self._cell_map[location] = cell.Cell(
+                        self, row, col, cell_data, self._default_format)
+                else:
+                    self._cell_map[location]._reset_data(
+                        cell_data, self._default_format)
+        for location in cleared_locations:
+            self._cell_map[location]._reset_data({}, self._default_format)
+
+    def _fetch(self):
         range_str = util.format_range_a1_notation(
             self._worksheet.title, self._start_row, self._end_row,
             self._start_col, self._end_col)
-        response = self._api.sheets.spreadsheets().values().get(
+        response = self._api.sheets.spreadsheets().get(
             spreadsheetId=self._worksheet._spreadsheet.key,
-            range=py3.str_to_native_str(range_str),
-            majorDimension='ROWS',
-            valueRenderOption='FORMATTED_VALUE',
-            dateTimeRenderOption='FORMATTED_STRING').execute()
-        self._input_value_map = {}
-        for i, row in enumerate(response.get('values', [])):
-            index_row = self._start_row + i
-            for j, value in enumerate(row):
-                index_col = self._start_col + j
-                self._input_value_map.setdefault((index_row, index_col), value)
-        self._cells_fetched = True
+            ranges=py3.str_to_native_str(range_str),
+            includeGridData=True).execute()
+        return response
 
     def commit(self):
-        if not self._queued_updates:
+        update_requests = []
+        for c in self._cell_map.values():
+            update_request = c._build_update_request()
+            if update_request:
+                update_requests.append(update_request)
+        if not update_requests:
             return
         request = {
-            'data': [
-                {
-                    'range': util.format_range_a1_notation(
-                        self._worksheet.title, row, row + 1, col, col + 1),
-                    'majorDimension': 'ROWS',
-                    'values': [[value]],
-                }
-                for row, col, value in self._queued_updates
-            ],
-            'valueInputOption': 'USER_ENTERED',
-            'includeValuesInResponse': False,
+            'requests': update_requests,
+            'include_spreadsheet_in_response': False,
         }
-        self._api.sheets.spreadsheets().values().batchUpdate(
+        self._api.sheets.spreadsheets().batchUpdate(
             spreadsheetId=self._worksheet._spreadsheet.key,
             body=request).execute()
-        del self._queued_updates[:]
+        self.refresh()
 
     def __getitem__(self, index):
         return self._view_rows[index]
@@ -167,11 +191,7 @@ class WorksheetViewRow(util.CustomMutableFixedList):
             col = self._end_col + index
         else:
             col = self._start_col + index
-        if not (self._start_col <= col < self._end_col):
-            raise IndexError('Column %d is out of range.' % col)
-        if (self._row, col) not in self._view._input_value_map:
-            self._view._ensure_cells_fetched()
-        return self._view._input_value_map.get((self._row, col), '')
+        return self._view._get_cell(self._row, col)
 
     def __setitem__(self, index, new_value):
         if isinstance(index, slice):
@@ -187,35 +207,15 @@ class WorksheetViewRow(util.CustomMutableFixedList):
                 self[i] = new_value_one
             return
         assert isinstance(index, six.integer_types)
-        if index < 0:
-            col = self._end_col + index
-        else:
-            col = self._start_col + index
-        if not (self._start_col <= col < self._end_col):
-            raise IndexError('Column %d is out of range.' % col)
-        if new_value is None:
-            new_value = ''
-        elif isinstance(new_value, six.integer_types):
-            new_value = '%d' % new_value
-        elif isinstance(new_value, float):
-            # Do best not to lose precision...
-            new_value = '%.20e' % new_value
-        elif isinstance(new_value, py3.bytes):
-            # May raise UnicodeDecodeError.
-            new_value = new_value.decode('ascii')
-        elif not isinstance(new_value, py3.str):
-            new_value = py3.str(new_value)
-        assert isinstance(new_value, py3.str)
-        self._view._input_value_map[(self._row, col)] = new_value
-        self._view._queued_updates.append((self._row, col, new_value))
+        cell = self[index]
+        cell._assign_value(new_value)
 
     def __len__(self):
         return self._end_col - self._start_col
 
     def __iter__(self):
-        self._view._ensure_cells_fetched()
-        for col in py3.range(self._start_col, self._end_col):
-            yield self._view._input_value_map.get((self._row, col), '')
+        for i in py3.range(len(self)):
+            yield self[i]
 
     def __repr__(self):
         return repr(list(self))

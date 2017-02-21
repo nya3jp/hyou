@@ -18,3 +18,11 @@ from __future__ import (
 
 class HyouRuntimeError(RuntimeError):
     pass
+
+
+class UncommittedCellPropertyError(HyouRuntimeError):
+
+    def __init__(self, property_name):
+        super(UncommittedCellPropertyError, self).__init__(
+            'Cell property "%s" is unavailable due to an uncommitted write. '
+            'Please call commit() first.' % property_name)
