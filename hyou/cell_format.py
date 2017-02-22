@@ -215,6 +215,7 @@ class CellFormat(object):
     def clear(self):
         self._current_format = copy.deepcopy(self._default_format)
         self._pending_format = copy.deepcopy(self._default_format)
+        self._cell._format_dirty = True
 
     def _get_pending_update(self):
         fields = []

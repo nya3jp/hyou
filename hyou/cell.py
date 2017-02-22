@@ -123,6 +123,10 @@ class Cell(object):
     def __unicode__(self):
         return py3.str(self.user_entered_value)
 
+    def clear(self):
+        self.user_entered_value = None
+        self.user_entered_format.clear()
+
     @property
     def row(self):
         # Do not call self._ensure_fetched_and_valid() here.
@@ -185,12 +189,12 @@ class Cell(object):
         if 'errorValue' in extended_value:
             return ErrorValue(extended_value['errorValue'])
         number = extended_value['numberValue']
+        if format.number_format_type == cell_format.NumberFormatType.DATE_TIME:
+            return util.serial_to_datetime(number)
         if format.number_format_type == cell_format.NumberFormatType.DATE:
             return util.serial_to_datetime(number).date()
         if format.number_format_type == cell_format.NumberFormatType.TIME:
             return util.serial_to_datetime(number).time()
-        if format.number_format_type == cell_format.NumberFormatType.DATE_TIME:
-            return util.serial_to_datetime(number)
         return number
 
     @classmethod
@@ -207,7 +211,12 @@ class Cell(object):
         if isinstance(value, ErrorValue):
             raise ValueError('ErrorValue can not be unparsed.')
         if isinstance(value, six.integer_types):
-            return ({'numberValue': value}), None
+            return ({'numberValue': value}, None)
+        if isinstance(value, datetime.datetime):
+            serial = util.datetime_to_serial(value)
+            return (
+                {'numberValue': serial},
+                cell_format.NumberFormatType.DATE_TIME)
         if isinstance(value, datetime.date):
             serial = util.datetime_to_serial(datetime.datetime(
                 value.year, value.month, value.day))
@@ -220,11 +229,6 @@ class Cell(object):
                         (value.hour * 60 + value.minute) * 60 + value.second),
                     microseconds=value.microsecond))
             return ({'numberValue': serial}, cell_format.NumberFormatType.TIME)
-        if isinstance(value, datetime.datetime):
-            serial = util.datetime_to_serial(value)
-            return (
-                {'numberValue': serial},
-                cell_format.NumberFormatType.DATE_TIME)
         raise ValueError('Can not unparse %r' % value)
 
 

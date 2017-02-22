@@ -16,6 +16,8 @@ from __future__ import (
     absolute_import, division, print_function, unicode_literals)
 
 from .cell import Cell
+from .cell import ErrorValue
+from .cell import FormulaValue
 from .cell_format import CellFormat
 from .cell_format import Color
 from .cell_format import NumberFormatType
