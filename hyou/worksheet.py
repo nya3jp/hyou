@@ -17,7 +17,6 @@ from __future__ import (
 
 import six
 
-from . import cell
 from . import exception
 from . import view
 

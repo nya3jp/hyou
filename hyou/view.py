@@ -17,6 +17,7 @@ from __future__ import (
 
 import six
 
+from . import cell
 from . import py3
 from . import util
 
@@ -26,16 +27,6 @@ class View(util.CustomMutableFixedList):
     def __init__(self, worksheet, api, start_row, end_row, start_col, end_col):
         self._worksheet = worksheet
         self._api = api
-        self._cell_map = {}
-        self._default_format = None
-        self._fetched = False
-        self._reset_size(start_row, end_row, start_col, end_col)
-
-    def refresh(self):
-        self._default_format = None
-        self._fetched = False
-
-    def _reset_size(self, start_row, end_row, start_col, end_col):
         self._start_row = start_row
         self._end_row = end_row
         self._start_col = start_col
@@ -43,6 +34,13 @@ class View(util.CustomMutableFixedList):
         self._view_rows = [
             ViewRow(self, row, start_col, end_col)
             for row in py3.range(start_row, end_row)]
+        self._cell_map = {}
+        self._default_format = None
+        self._fetched = False
+
+    def refresh(self):
+        self._default_format = None
+        self._fetched = False
 
     def _get_cell(self, row, col):
         if not (self._start_row <= row < self._end_row):
