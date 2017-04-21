@@ -60,6 +60,7 @@ class Collection(util.LazyOrderedDictionary):
             fields='items/id').execute()
         for item in response['items']:
             key = item['id']
+            # TODO(v3): Fill in title
             yield (key, spreadsheet.Spreadsheet(self._api, key, None))
 
     def _spreadsheet_constructor(self, key):

@@ -37,6 +37,7 @@ class NumberFormatType(enum.Enum):
     SCIENTIFIC = 'SCIENTIFIC'
 
 
+# TODO(v3): Inherit from collections.namedtuple
 class Color(object):
 
     __slots__ = ['_r', '_g', '_b', '_a']
@@ -213,6 +214,7 @@ class CellFormat(object):
         self._pending_format = {}
 
     def clear(self):
+        # TODO(v3): Make sure this is correct
         self._current_format = copy.deepcopy(self._default_format)
         self._pending_format = copy.deepcopy(self._default_format)
         self._cell._format_dirty = True
