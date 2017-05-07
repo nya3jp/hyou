@@ -53,19 +53,35 @@ else:
     zip = builtins.zip
 
 
-def str_to_native_str(s):
+def str_to_native_str(s, encoding):
+    """Converts a unicode string to a native string."""
+    if not isinstance(s, str):
+        raise TypeError(
+            'Expected %s, got %s' % (str.__name__, type(s).__name__))
     if six.PY2:
-        return s.encode('utf-8')
+        return s.encode(encoding)
     return s
 
 
-def native_str_to_bytes(s):
+def native_str_to_bytes(s, encoding):
+    """Converts a native string to a byte string."""
+    if not isinstance(s, builtins.str):
+        raise TypeError(
+            'Expected %s, got %s' % (builtins.str.__name__, type(s).__name__))
     if six.PY2:
         return s
-    return s.encode('utf-8')
+    return s.encode(encoding)
 
 
-def promote_str(s):
+def promote_to_str(s):
+    """Promotes a byte string to a unicode string for Python 2.
+
+    This function does nothing to the given value otherwise.
+    """
     if six.PY2 and isinstance(s, builtins.str):
+        # Use a default encoding (usually ascii). If this caused your script to
+        # crash by UnicodeDecodeError, you should convert your byte string to a
+        # unicode string before passing to hyou, rather than adding
+        # encoding='utf-8' or whatever here.
         return builtins.unicode(s)
     return s

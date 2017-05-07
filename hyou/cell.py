@@ -199,7 +199,7 @@ class Cell(object):
 
     @classmethod
     def _unparse_extended_value(cls, value):
-        value = py3.promote_str(value)
+        value = py3.promote_to_str(value)
         if value is None:
             return ({}, None)
         if isinstance(value, py3.str):
@@ -237,7 +237,7 @@ class ErrorValue(object):
     __slots__ = ['_error']
 
     def __init__(self, error):
-        error = py3.promote_str(error)
+        error = py3.promote_to_str(error)
         if not isinstance(error, py3.str):
             raise TypeError('Error message must be a string.')
         self._error = error
@@ -255,7 +255,7 @@ class FormulaValue(object):
     __slots__ = ['_formula']
 
     def __init__(self, formula):
-        formula = py3.promote_str(formula)
+        formula = py3.promote_to_str(formula)
         if not isinstance(formula, py3.str):
             raise TypeError('Formula value must be a string.')
         self._formula = formula

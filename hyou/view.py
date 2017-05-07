@@ -86,7 +86,7 @@ class View(util.CustomMutableFixedList):
             self._start_col, self._end_col)
         response = self._api.sheets.spreadsheets().get(
             spreadsheetId=self._worksheet._spreadsheet.key,
-            ranges=py3.str_to_native_str(range_str),
+            ranges=py3.str_to_native_str(range_str, encoding='utf-8'),
             includeGridData=True).execute()
         return response
 

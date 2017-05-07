@@ -161,7 +161,7 @@ class CellFormatProperty(object):
             new_value = self._default_value
         else:
             if self._type is py3.str:
-                new_value = py3.promote_str(new_value)
+                new_value = py3.promote_to_str(new_value)
                 util.check_type(new_value, py3.str)
             elif self._type in six.integer_types:
                 util.check_type(new_value, six.integer_types)
@@ -171,7 +171,7 @@ class CellFormatProperty(object):
                 util.check_type(new_value, float)
             elif issubclass(self._type, enum.Enum):
                 if isinstance(new_value, six.string_types):
-                    new_value = self._type(py3.promote_str(new_value))
+                    new_value = self._type(py3.promote_to_str(new_value))
                 util.check_type(new_value, self._type)
             elif self._type is Color:
                 if isinstance(new_value, tuple) and len(new_value) in (3, 4):
