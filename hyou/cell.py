@@ -146,8 +146,6 @@ class Cell(object):
     def user_entered_value(self, new_value):
         self._assign_value(new_value)
 
-    value = user_entered_value
-
     @property
     def effective_value(self):
         self._ensure_fetched_and_valid()
@@ -166,8 +164,6 @@ class Cell(object):
     def user_entered_format(self):
         self._ensure_fetched_and_valid()
         return self._user_entered_format
-
-    format = user_entered_format
 
     @property
     def effective_format(self):

@@ -21,22 +21,28 @@ Synopsis
 
     # Open a spreadsheet by ID
     spreadsheet = collection['1ZYeIFccacgHkL0TPfdgXiMfPCuEEWUtbhXvaB9HBDzQ']
-    print spreadsheet.title         # => "Hyou Test Sheet"
+    print(repr(spreadsheet.title))        # => "Hyou Test Sheet"
 
     # Open a worksheet in a spreadsheet by sheet name
     worksheet = spreadsheet['Sheet1']
-    print worksheet.title           # => "Sheet1"
-    print worksheet.rows            # => 5
-    print worksheet.cols            # => 3
+    print(repr(worksheet.title))          # => "Sheet1"
+    print(repr(worksheet.rows))           # => 5
+    print(repr(worksheet.cols))           # => 3
 
-    # Worksheet objects can be accessed just like two-dimensional lists
-    print worksheet[1][0]           # => "banana"
-    print worksheet[1][1]           # => "50"
+    # Create a view to access worksheet data
+    view = worksheet.view()
 
-    # Call Worksheet.commit() to apply changes
-    worksheet[2][0] = 'cinamon'
-    worksheet[2][1] = 40
-    worksheet.commit()
+    # A view is a two-dimensional list of cell objects that can be
+    # accessed intuitively.
+    print(repr(view[1][0].formatted_value))         # => "banana"
+    print(repr(view[1][1].formatted_value))         # => "50"
+    print(repr(view[1][1].effective_value))         # => 50
+
+    # Writing data to cells is also straightforward.
+    view[2][0].user_entered_value = 'cinamon'
+    view[2][1].user_entered_value = 40
+    view[2][1].user_entered_format.background_color = (1, 1, 0)  # yellow
+    view.commit()
 
 
 User Guide
@@ -103,7 +109,7 @@ You can enumerate the spreadsheets you own by accessing a :py:class:`Collection`
 .. code:: python
 
     for id, spreadsheet in collection.iteritems():
-        print id, spreadsheet.title
+        print(id, spreadsheet.title)
 
 If you know a spreadsheet ID, you can open it just by indexing. This is faster than iterating through :py:class:`Collection` because it does not fetch the list of spreadsheets. For example, to open https://docs.google.com/spreadsheets/d/1ZYeIFccacgHkL0TPfdgXiMfPCuEEWUtbhXvaB9HBDzQ/edit :
 
@@ -138,19 +144,64 @@ To add or delete worksheets, use :py:meth:`Spreadsheet.add_worksheet` and :py:me
 
 .. code:: python
 
-    print spreadsheet.title  # => "Current spreadsheet name"
+    print(spreadsheet.title)  # => Current spreadsheet name
     spreadsheet.title = 'New spreadsheet name'
 
 
 Working with Worksheets
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-A :py:class:`Worksheet` object can be accessed just like two-dimensional string lists.
+A :py:class:`Worksheet` object represents a sheet in a spreadsheet.
+
+It provides several attributes:
 
 .. code:: python
 
-    for i, row in enumerate(worksheet):
-        print i, row[0], '/'.join(row[1:])
+    print(worksheet.title)        # => Sheet1
+    print(worksheet.rows)         # => 1000
+    print(worksheet.cols)         # => 26
+    print(worksheet.frozen_rows)  # => 2
+    print(worksheet.frozen_cols)  # => 1
+
+Those attributes are writable.
+
+.. code:: python
+
+    worksheet.title = "New Sheet Name"
+    worksheet.rows = 1024
+    worksheet.cols = 40
+    worksheet.set_size(1024, 40)  # Sets rows/cols at once
+    worksheet.frozen_rows = 3
+    worksheet.frozen_cols = 2
+    worksheet.set_frozen_size(3, 2)  # Sets rows/cols at once
+
+The most important method is :py:meth:`Worksheet.view` which returns a view of a worksheet.
+
+.. code:: python
+
+    # View of whole the sheet
+    view = worksheet.view()
+
+    # View of a limited range
+    view = worksheet.view(start_row=1, end_row=1000, start_col=10, end_col=13)
+
+
+Working with Views
+~~~~~~~~~~~~~~~~~~
+
+A :py:class:`View` object can be accessed just like a two-dimensional list of :py:class:`Cell` objects.
+
+.. code:: python
+
+    cell = view[0][0]
+    print(repr(cell.user_input_value))  # => 283
+    print(repr(cell.effective_value))   # => 283
+    print(repr(cell.formatted_value))   # => "283"
+
+    for i, row in enumerate(view):
+        print(i,
+              row[0].formatted_value,
+              '/'.join(cell.formatted_value for cell in row[1:]))
 
 A cell value is a bare input string, represented as a unicode string (:py:class:`str` in Python 3, :py:class:`unicode` in Python 2).
 
@@ -164,7 +215,7 @@ If you attempt to write a non-string value (e.g. numbers) to a cell, it is autom
 .. code:: python
 
     worksheet[0][0] = 7
-    print type(worksheet[0][0])  # => str in Python 3, unicode in Python 2
+    print(type(worksheet[0][0]))  # => str in Python 3, unicode in Python 2
 
 Writes to cells are never committed until :py:meth:`Worksheet.commit` is called. You can use *with statements* to make sure :py:meth:`Worksheet.commit` is called:
 
@@ -189,19 +240,6 @@ To clear the cache to access the up-to-date data, call :py:func:`refresh`.
 Please be aware that any uncommitted writes to worksheet cells are discarded when :py:func:`refresh` is called.
 
 As for :py:class:`Worksheet`, all worksheet cells are fetched when a cell is attempted to read for the first time. This can be waste of time and bandwidth if you are interested in a subrange of a worksheet. In such case, you can use views described next.
-
-
-Using Views
-~~~~~~~~~~~
-
-If you are interested in a subrange of a worksheet, you can use :py:class:`WorksheetView` for efficiency to reduce the number of fetched cells. For example, this code snippet will create a 20x10 view of a worksheet:
-
-.. code:: python
-
-    view = worksheet.view(start_row=100, end_row=120, start_col=200, end_col=210)
-    assert view[0][0] == worksheet[100][200]
-
-Each view has independent cache. Reading a cell of a view will fetch contained cells only, instead of all cells in the worksheet.
 
 
 API Reference
